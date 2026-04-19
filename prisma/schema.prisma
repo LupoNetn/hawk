@@ -54,7 +54,7 @@ model Webhook {
   orgId        String
   organization Organization @relation(fields: [orgId], references: [id])
   deliveries   Delivery[]
-  url           String
+  url           String @unique
   subscriptions String[]
   secret        String
   createdAt     DateTime   @default(now())
