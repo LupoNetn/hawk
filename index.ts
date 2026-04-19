@@ -4,6 +4,7 @@ import cookieParser from "cookie-parser";
 import cors from "cors";
 import eventsRouter from "./routers/events.router.js";
 import authRouter from "./routers/auth.router.js"
+import { processDeliveryQueue, processEventsQueue } from "./workers/worker.js";
 
 dotenv.config();
 
@@ -33,4 +34,7 @@ const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
+
+    processEventsQueue();
+    processDeliveryQueue();
 })
