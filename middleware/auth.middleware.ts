@@ -41,7 +41,15 @@ export const authenticateApiKey = async (req: Request, res: Response, next: Next
       
       const keyRecord = await prisma.apiKey.findFirst({
           where: { keyHash: hashedKey },
-          include: { organization: true }
+          select: {
+              organization: {
+                  select: {
+                      id: true,
+                      email: true,
+                      name: true
+                  }
+              }
+          }
       });
 
       if (!keyRecord) {

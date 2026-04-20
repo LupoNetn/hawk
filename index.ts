@@ -6,6 +6,7 @@ import eventsRouter from "./routers/events.router.js";
 import authRouter from "./routers/auth.router.js"
 import webhookRouter from "./routers/webhook.router.js"
 import apiKeyRouter from "./routers/apikey.router.js"
+import dashboardRouter from "./routers/dashboard.router.js"
 import { processDeliveryQueue, processEventsQueue } from "./workers/worker.js";
 
 dotenv.config();
@@ -33,6 +34,7 @@ app.use("/events", eventsRouter);
 app.use("/auth", authRouter);
 app.use("/webhook", webhookRouter);
 app.use("/api-keys", apiKeyRouter);
+app.use("/dashboard", dashboardRouter);
 
 const PORT = process.env.PORT || 3000;
 
