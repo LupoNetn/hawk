@@ -148,3 +148,20 @@ export const handlerLogout = async (req: Request, res: Response) => {
         res.status(500).json({ message: "Internal server error" });
     }
 }
+export const handlerGetMe = async (req: Request, res: Response) => {
+    try {
+        const organization = (req as any).organization;
+        
+        if (!organization) {
+            return res.status(401).json({ message: "Not authenticated" });
+        }
+
+        res.status(200).json({
+            message: "Profile fetched successfully",
+            data: organization
+        });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: "Internal server error" });
+    }
+}

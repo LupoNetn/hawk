@@ -32,7 +32,7 @@ app.get("/health", (req: Request, res: Response) => {
 //setup routes
 app.use("/events", eventsRouter);
 app.use("/auth", authRouter);
-app.use("/webhook", webhookRouter);
+app.use("/webhooks", webhookRouter);
 app.use("/api-keys", apiKeyRouter);
 app.use("/dashboard", dashboardRouter);
 
