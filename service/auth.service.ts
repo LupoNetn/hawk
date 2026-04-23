@@ -23,6 +23,7 @@ export async function signUpService(name: string, email: string, password: strin
             password,
             apiKeys: {
                 create: {
+                    name: "Default",
                     keyHash: hashedKey
                 }
             }

@@ -2,7 +2,7 @@ import crypto from "crypto";
 import prisma from "../db/prisma.js";
 import { AppError } from "../utils/errors.js";
 
-export async function createWebhook(orgId: string, url: string, subscriptions: string[]) {
+export async function createWebhook(orgId: string, name: string, url: string, subscriptions: string[]) {
     try {
         const existingWebhook = await prisma.webhook.findFirst({
             where: {
@@ -18,6 +18,7 @@ export async function createWebhook(orgId: string, url: string, subscriptions: s
         const webhook = await prisma.webhook.create({
             data: {
                 orgId,
+                name,
                 url,
                 subscriptions,
                 secret,

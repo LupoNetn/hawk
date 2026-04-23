@@ -5,11 +5,15 @@ import validator from "validator";
 
 export const handleCreateWebhook = async (req: Request, res: Response) => {
     try {
-        const {url, subscriptions} = req.body
+        const {name, url, subscriptions} = req.body
         const orgId = (req as any).organization.id;
 
-        if (!url || !subscriptions) {
-            throw new AppError("URL and Subscriptions are required", 400);
+        if (!name || !url || !subscriptions) {
+            throw new AppError("Name, URL and Subscriptions are required", 400);
+        }
+
+        if (typeof name !== "string" || name.trim().length === 0) {
+            throw new AppError("Valid name is required", 400);
         }
 
         if (!validator.isURL(url, { require_protocol: true, protocols: ['http', 'https'] })) {
@@ -20,7 +24,7 @@ export const handleCreateWebhook = async (req: Request, res: Response) => {
             throw new AppError("Subscriptions must be a non-empty array", 400);
         }
 
-        const webhook = await createWebhook(orgId, url, subscriptions)
+        const webhook = await createWebhook(orgId, name, url, subscriptions)
 
         return res.status(201).json(
             {
