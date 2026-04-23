@@ -77,14 +77,14 @@ export const handlerSignIn = async (req: Request, res: Response) => {
         res.cookie("accessToken", signinResponse.accessToken, {
             httpOnly: true,
             secure: process.env.NODE_ENV === "production",
-            sameSite: "strict",
+            sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
             maxAge: 15 * 60 * 1000 // 15 mins
         });
 
         res.cookie("refreshToken", signinResponse.refreshToken, {
             httpOnly: true,
             secure: process.env.NODE_ENV === "production",
-            sameSite: "strict",
+            sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
             maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
         });
 
@@ -119,7 +119,7 @@ export const handlerRefreshToken = async (req: Request, res: Response) => {
         res.cookie("accessToken", accessToken, {
             httpOnly: true,
             secure: process.env.NODE_ENV === "production",
-            sameSite: "strict",
+            sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
             maxAge: 15 * 60 * 1000 // 15 mins
         });
 
