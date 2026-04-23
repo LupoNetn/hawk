@@ -16,7 +16,7 @@ export const handleEvents = async (req: Request, res: Response) => {
         return res.status(500).json({ message: "Failed to process event" });
     }
     
-    return res.status(200).json({ message: "Event has been created and is currently undergoing processing", eventId: event.id });
+    return res.status(200).json({ message: "Event has been created and is currently undergoing processing", eventId: event.id});
   } catch (error: any) {
     if (error instanceof AppError) {
       return res.status(error.statusCode).json({ message: error.message });

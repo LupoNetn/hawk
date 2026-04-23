@@ -7,7 +7,9 @@ export const deliveryQueue: any[] = [];
 export async function processEventsQueue() {
  while(true){
     if(eventsQueue.length > 0){
+      console.log("events queue", eventsQueue.length)
         const event = eventsQueue.shift();
+        console.log("got event", event)
         await processEvents(event);
     } else {
         await new Promise((resolve) => setTimeout(resolve, 100));
@@ -68,6 +70,7 @@ export async function processEvents(event: any) {
     });
 
     deliveryQueue.push(...deliveryQueueItems);
+    console.log("delivery queue", deliveryQueue)
   } catch (error) {
     console.error(error);
   }
@@ -76,7 +79,9 @@ export async function processEvents(event: any) {
 export async function processDeliveryQueue() {
  while(true){
     if(deliveryQueue.length > 0){
+      console.log("delivery queue", deliveryQueue.length)
         const delivery = deliveryQueue.shift();
+        console.log("got delivery", delivery)
         await retryWrapper(delivery);
     } else {
         await new Promise((resolve) => setTimeout(resolve, 100));
@@ -84,7 +89,7 @@ export async function processDeliveryQueue() {
  }
 }
 
-export async function retryWrapper(delivery: any) {
+export async function retryWrapper(job: any) {
   let attempts = 0;
   let isSuccess = false;
   let responseStatus = 0;
@@ -97,17 +102,17 @@ export async function retryWrapper(delivery: any) {
     try {
       // 1. Generate the HMAC signature
       const signature = crypto
-        .createHmac("sha256", delivery.webhook.secret)
-        .update(JSON.stringify(delivery.event.payload))
+        .createHmac("sha256", job.webhook.secret)
+        .update(JSON.stringify(job.event.payload))
         .digest("hex");
 
-      const response = await fetch(delivery.webhook.url, {
+      const response = await fetch(job.webhook.url, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "X-Hawk-Signature": signature,
         },
-        body: JSON.stringify(delivery.event.payload),
+        body: JSON.stringify(job.event.payload),
       });
 
       if (!response.ok) {
@@ -116,7 +121,7 @@ export async function retryWrapper(delivery: any) {
  
         // Update DB on Every Failure
         await prisma.delivery.update({
-          where: { id: delivery.id },
+          where: { id: job.delivery.id },
           data: { status: "failed", attempts, responseStatus, error },
         });
 
@@ -129,7 +134,7 @@ export async function retryWrapper(delivery: any) {
 
       // Update DB on Success
       await prisma.delivery.update({
-        where: { id: delivery.id },
+        where: { id: job.delivery.id },
         data: {
           status: "success",
           attempts,
@@ -142,7 +147,7 @@ export async function retryWrapper(delivery: any) {
 
       // Update DB on Exception (broken URL, DNS fail, etc.)
       await prisma.delivery.update({
-        where: { id: delivery.id },
+        where: { id: job.delivery.id },
         data: { status: "failed", attempts, error },
       });
 
@@ -154,17 +159,17 @@ export async function retryWrapper(delivery: any) {
   if (!isSuccess) {
     await prisma.notification.create({
       data: {
-        orgId: delivery.orgId,
+        orgId: job.delivery.orgId,
         type: "WEBHOOK_DELIVERY_FAILED",
-        message: `Webhook delivery failed for event type: ${delivery.event.type}`,
+        message: `Webhook delivery failed for event type: ${job.event.type}`,
         metadata: {
-          eventId: delivery.event.id,
-          webhookId: delivery.webhook.id,
+          eventId: job.event.id,
+          webhookId: job.webhook.id,
           attempts,
           error,
         },
       },
     });
-    console.log("Notification, webhook delivery failed sent:", delivery.id);
+    console.log("Notification, webhook delivery failed sent:", job.delivery.id);
   }
 }
