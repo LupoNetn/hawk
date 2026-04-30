@@ -7,7 +7,7 @@ import authRouter from "./routers/auth.router.js"
 import webhookRouter from "./routers/webhook.router.js"
 import apiKeyRouter from "./routers/apikey.router.js"
 import dashboardRouter from "./routers/dashboard.router.js"
-import { processDeliveryQueue, processEventsQueue } from "./workers/worker.js";
+import "./workers/worker.js"
 
 dotenv.config();
 
@@ -40,7 +40,4 @@ const PORT = process.env.PORT || 3000;
 
 app.listen(PORT,  () => {
     console.log(`Server is running on port ${PORT}`);
-
-     processEventsQueue();
-     processDeliveryQueue();
 })

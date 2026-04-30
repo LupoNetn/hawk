@@ -1,6 +1,7 @@
 import prisma from "../db/prisma.js";
 import { AppError } from "../utils/errors.js";
-import { eventsQueue } from "../workers/worker.js";
+import { EventQueue } from "../utils/queues.js";
+// import { eventsQueue } from "../workers/worker.js";
 
 export const handleEvents = async (
   orgId: string,
@@ -16,7 +17,7 @@ export const handleEvents = async (
       },
     });
 
-    eventsQueue.push(event);
+    await EventQueue.add("event", event)
 
     return event;
   } catch (error) {

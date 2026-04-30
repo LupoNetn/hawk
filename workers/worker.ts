@@ -1,21 +1,22 @@
 import prisma from "../db/prisma.js";
 import crypto from "crypto";
 
-export const eventsQueue: any[] = [];
-export const deliveryQueue: any[] = [];
+import { Worker, Job } from "bullmq";
+import { redis } from "../utils/redis.js";
+import { DeliveryQueue } from "../utils/queues.js";
 
-export async function processEventsQueue() {
- while(true){
-    if(eventsQueue.length > 0){
-      console.log("events queue", eventsQueue.length)
-        const event = eventsQueue.shift();
-        console.log("got event", event)
-        await processEvents(event);
-    } else {
-        await new Promise((resolve) => setTimeout(resolve, 100));
-    }
- }
-}
+
+export const eventWorker = new Worker("event-queue", async (job: Job) => {
+  console.log(`Processing event job: ${job.id}`)
+
+  const event = job.data;
+
+  await processEvents(event)
+}, {
+  connection: redis,
+  concurrency: 5,
+})
+
 
 export async function processEvents(event: any) {
   try {
@@ -69,107 +70,119 @@ export async function processEvents(event: any) {
       };
     });
 
-    deliveryQueue.push(...deliveryQueueItems);
+   const deliveryQueue = await DeliveryQueue.addBulk(
+    deliveryQueueItems.map((item) => ({
+      name: "delivery",
+      data: item,
+      opts: {
+        attempts: 3,
+        backoff: {
+            type: "exponential",
+            delay: 1000,
+        },
+        removeOnComplete: true,
+        removeOnFail: false,
+      }
+    }))
+   )
     console.log("delivery queue", deliveryQueue)
   } catch (error) {
     console.error(error);
   }
 }
 
-export async function processDeliveryQueue() {
- while(true){
-    if(deliveryQueue.length > 0){
-      console.log("delivery queue", deliveryQueue.length)
-        const delivery = deliveryQueue.shift();
-        console.log("got delivery", delivery)
-        await retryWrapper(delivery);
-    } else {
-        await new Promise((resolve) => setTimeout(resolve, 100));
-    }
- }
-}
+export const deliveryWorker = new Worker("delivery-queue", async (job: Job)=>{
+    const {delivery, event, webhook} = job.data;
 
-export async function retryWrapper(job: any) {
-  let attempts = 0;
-  let isSuccess = false;
-  let responseStatus = 0;
-  let error = "";
+    // job.attemptsMade starts at 0 for the first run, so +1 gives us the current attempt number
+    await retryWrapper({delivery, event, webhook}, job.attemptsMade + 1)
+}, {
+    connection: redis,
+    concurrency: 5,
+})
 
-  while (attempts < 4) {
-    if (isSuccess) break;
-
-    attempts++;
+deliveryWorker.on("failed", async (job, err) => {
+  // Check if it's the final failed attempt (max attempts is set to 3)
+  if (job && job.attemptsMade >= 3) {
+    const { delivery, event, webhook } = job.data;
+    
     try {
-      // 1. Generate the HMAC signature
-      const signature = crypto
-        .createHmac("sha256", job.webhook.secret)
-        .update(JSON.stringify(job.event.payload))
-        .digest("hex");
-
-      const response = await fetch(job.webhook.url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Hawk-Signature": signature,
-        },
-        body: JSON.stringify(job.event.payload),
-      });
-
-      if (!response.ok) {
-        error = `Webhook returned status: ${response.status}`;
-        responseStatus = response.status;
- 
-        // Update DB on Every Failure
-        await prisma.delivery.update({
-          where: { id: job.delivery.id },
-          data: { status: "failed", attempts, responseStatus, error },
-        });
-
-        const delay = Math.min(1000 * Math.pow(2, attempts - 1), 60000);
-        await new Promise((resolve) => setTimeout(resolve, delay));
-        continue;
-      }
-
-      isSuccess = true;
-
-      // Update DB on Success
-      await prisma.delivery.update({
-        where: { id: job.delivery.id },
+      await prisma.notification.create({
         data: {
-          status: "success",
-          attempts,
-          responseStatus: response.status,
-          error: "",
+          orgId: delivery.orgId,
+          type: "WEBHOOK_DELIVERY_FAILED",
+          message: `Webhook delivery failed permanently for event type: ${event.type}`,
+          metadata: {
+            eventId: event.id,
+            webhookId: webhook.id,
+            attempts: job.attemptsMade,
+            error: err.message,
+          },
         },
       });
-    } catch (e: any) {
-      error = e.message;
-
-      // Update DB on Exception (broken URL, DNS fail, etc.)
-      await prisma.delivery.update({
-        where: { id: job.delivery.id },
-        data: { status: "failed", attempts, error },
-      });
-
-      const delay = Math.min(1000 * Math.pow(2, attempts - 1), 60000);
-      await new Promise((resolve) => setTimeout(resolve, delay));
+      console.log("Notification sent: Webhook failed permanently after 3 tries.", delivery.id);
+    } catch (dbError) {
+      console.error("Failed to create notification", dbError);
     }
   }
+});
 
-  if (!isSuccess) {
-    await prisma.notification.create({
+export async function retryWrapper(job: any, attemptNumber: number) {
+  // 1. Generate the HMAC signature
+  const signature = crypto
+    .createHmac("sha256", job.webhook.secret)
+    .update(JSON.stringify(job.event.payload))
+    .digest("hex");
+
+  try {
+    // 2. Fire the webhook
+    const response = await fetch(job.webhook.url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Hawk-Signature": signature,
+      },
+      body: JSON.stringify(job.event.payload),
+    });
+
+    // 3. Handle Failure (non-2xx response)
+    if (!response.ok) {
+      const errorMsg = `Webhook returned status: ${response.status}`;
+      
+      // Update DB to show this attempt failed
+      await prisma.delivery.update({
+        where: { id: job.delivery.id },
+        data: { status: "failed", attempts: attemptNumber, responseStatus: response.status, error: errorMsg },
+      });
+
+      // IMPORTANT: THROW THE ERROR SO BULLMQ KNOWS IT FAILED AND RETRIES LATER!
+      throw new Error(errorMsg);
+    }
+
+    // 4. Handle Success (2xx response)
+    await prisma.delivery.update({
+      where: { id: job.delivery.id },
       data: {
-        orgId: job.delivery.orgId,
-        type: "WEBHOOK_DELIVERY_FAILED",
-        message: `Webhook delivery failed for event type: ${job.event.type}`,
-        metadata: {
-          eventId: job.event.id,
-          webhookId: job.webhook.id,
-          attempts,
-          error,
-        },
+        status: "success",
+        attempts: attemptNumber,
+        responseStatus: response.status,
+        error: "",
       },
     });
-    console.log("Notification, webhook delivery failed sent:", job.delivery.id);
+
+  } catch (e: any) {
+    // If it's the error we just threw manually above, let it bubble up
+    if (e.message && e.message.includes("Webhook returned status:")) {
+      throw e;
+    }
+
+    // Otherwise, this is a network/DNS error. Update the DB then throw.
+    await prisma.delivery.update({
+      where: { id: job.delivery.id },
+      data: { status: "failed", attempts: attemptNumber, error: e.message },
+    });
+    
+    // Bubble up so BullMQ can trigger the backoff/retry
+    throw e;
   }
 }
